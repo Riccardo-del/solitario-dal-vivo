@@ -1,0 +1,16 @@
+{
+ "name": "Solitario dal vivo",
+ "short_name": "Solitario",
+ "start_url": "./",
+ "scope": "./",
+ "display": "standalone",
+ "background_color": "#12171d",
+ "theme_color": "#12171d",
+ "icons": [
+  {
+   "src": "icona.png",
+   "sizes": "180x180",
+   "type": "image/png"
+  }
+ ]
+}

@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Solitario">
+<link rel="apple-touch-icon" href="icona.png">
+<link rel="manifest" href="manifest.json">
+<title>Solitario dal vivo</title>
+<style>
+/* Layout: a sinistra la fotocamera dal vivo con il tavolo agganciato, a destra il consiglio e la piantina. */
+:root {
+  --bg: #12171d; --surface: #1b232c; --ink: #e8edf2; --muted: #9aa8b6; --line: #2c3743;
+  --red: #ef5a62; --from: #f2bd3a; --to: #4bb3e6; --ok: #5cc07f; --warn: #ec8a4f;
+  --felt: #1f4436; --felt-line: #2f604c;
+  --display: "Avenir Next Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: -apple-system, system-ui, sans-serif;
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.4 var(--body); -webkit-user-select: none; user-select: none; }
+.app { box-sizing: border-box; height: 100%; display: grid; gap: 14px; padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
+@media (max-width: 760px), (orientation: portrait) { .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; height: auto; } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 10px; min-width: 0; align-content: start; }
+.vista { position: relative; background: #000; border-radius: 8px; overflow: hidden; aspect-ratio: 16 / 9; max-width: 100%; }
+.vista video, .vista img, .vista canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.vista.tocca { outline: 3px solid var(--from); cursor: crosshair; }
+.vista { touch-action: none; }
+.stato { display: flex; align-items: center; gap: 8px; font-size: 15px; min-height: 1.4em; }
+.pallino { width: 11px; height: 11px; border-radius: 50%; background: var(--muted); flex: none; }
+.pallino.ok { background: var(--ok); } .pallino.warn { background: var(--warn); }
+.azioni { display: flex; gap: 10px; flex-wrap: wrap; }
+button { font: 600 17px/1 var(--body); border-radius: 9px; border: 1px solid var(--line); background: #232d38; color: var(--ink); padding: 13px 16px; cursor: pointer; }
+button.primario { background: var(--red); border-color: var(--red); color: #fff; font-size: 19px; padding: 16px 22px; }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible { outline: 3px solid var(--to); outline-offset: 2px; }
+.label { font: 600 13px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.mossa { font: 700 44px/1.05 var(--display); text-wrap: balance; }
+.mossa .r { color: var(--red); }
+.frase { font-size: 19px; }
+.nota { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+#piantina { width: 100%; display: block; border-radius: 8px; background: var(--felt); }
+.opzioni { display: flex; gap: 12px 20px; flex-wrap: wrap; align-items: center; font-size: 16px; }
+.opzioni label { display: inline-flex; gap: 8px; align-items: center; }
+input[type=checkbox] { width: 20px; height: 20px; }
+.avvio { position: fixed; inset: 0; background: var(--bg); display: grid; place-items: center; padding: 24px; z-index: 5; }
+.avvio > div { max-width: 46ch; display: grid; gap: 14px; text-align: center; }
+.avvio h1 { font: 700 38px/1 var(--display); margin: 0; }
+.avvio p { margin: 0; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="avvio" id="avvio">
+  <div>
+    <h1>Solitario dal vivo</h1>
+    <p>Appoggia l'iPad davanti allo schermo dove giochi a cardgames.io, con tutto il tavolo inquadrato. L'app riconosce le carte da sola e ti dice la mossa dopo ogni tua mossa.</p>
+    <p id="caricamento">Carico le immagini delle carte…</p>
+    <button class="primario" id="via">Accendi la fotocamera</button>
+  </div>
+</div>
+
+<div class="app">
+  <section class="panel" aria-label="Fotocamera">
+    <div class="vista" id="vista">
+      <video id="video" playsinline muted autoplay></video>
+      <img id="provaImg" alt="" hidden>
+      <canvas id="sovra"></canvas>
+    </div>
+    <div class="stato"><span class="pallino" id="pallino"></span><span id="stato">Fotocamera spenta</span></div>
+    <div class="azioni">
+      <button id="riaggancia">Riaggancia il tavolo</button>
+      <button id="nuova">Nuova partita</button>
+      <button id="segnala">Segnala lettura sbagliata</button>
+    </div>
+    <div class="azioni">
+      <button id="angoli">Indica gli angoli del tavolo</button>
+      <button id="automatici" hidden>Torna agli angoli automatici</button>
+      <label id="zoomBox" class="opzioni" hidden>Zoom <input type="range" id="zoom" min="1" max="3" step="0.05" value="1"></label>
+    </div>
+  </section>
+
+  <section class="panel" aria-label="Consiglio">
+    <div class="label">Mossa consigliata</div>
+    <div class="mossa" id="mossa">In attesa del tavolo</div>
+    <div class="frase" id="frase">Inquadra il tavolo: il consiglio compare da solo e cambia a ogni tua mossa.</div>
+    <canvas id="piantina" width="700" height="520" aria-label="Il tavolo come l'ha letto l'app"></canvas>
+    <div class="opzioni">
+      <label><input type="checkbox" id="voce"> Leggi ad alta voce</label>
+    </div>
+    <div class="nota" id="nota"></div>
+  </section>
+</div>
+
+<canvas id="lavoro" hidden></canvas>
+<script src="logica.js"></script>
+<script src="occhio.js"></script>
+<script src="tracciamento.js"></script>
+<script>const el = {piantina: document.getElementById('piantina')};</script>
+<script src="piantina.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+Object.assign(el, {
+  avvio: $('avvio'), caricamento: $('caricamento'), via: $('via'), video: $('video'), provaImg: $('provaImg'),
+  sovra: $('sovra'), vista: $('vista'), pallino: $('pallino'), stato: $('stato'), mossa: $('mossa'), frase: $('frase'),
+  nota: $('nota'), voce: $('voce'), lavoro: $('lavoro'),
+});
+
+let livelli = null, occhio = null, consigliere = new Consigliere();
+let sorgente = null;               // video (o immagine di prova)
+let errori = 0;                    // letture non riuscite di fila
+let precedente = null;             // firma dell'ultima lettura (per aspettare che le carte siano ferme)
+let conferme = 0;                    // quante letture di fila hanno dato lo stesso tavolo
+let accettata = null;              // firma dell'ultimo tavolo passato al consigliere
+let statoAccettato = null, ultimoLetto = null;
+let ultimoConsiglio = '';
+let tempi = [];
+const tracciatore = new Tracciatore();
+const SOGLIA_MOVIMENTO = 0.5; // percento di riquadri del tavolo cambiati di molto
+const nomePosto = p => p[0] === 'c' ? 'colonna ' + (+p[1] + 1) : p[0] === 'b' ? 'base ' + SIMBOLI[p[1]] : p;
+let agganciando = false;
+
+try { el.voce.checked = localStorage.getItem('voce') === '1'; } catch (e) {}
+el.voce.onchange = () => { try { localStorage.setItem('voce', el.voce.checked ? '1' : '0'); } catch (e) {} };
+
+function stato(testo, tipo = '') { el.stato.textContent = testo; el.pallino.className = 'pallino ' + tipo; }
+
+function parla(testo) {
+  if (!el.voce.checked || !('speechSynthesis' in window)) return;
+  try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(testo); u.lang = 'it-IT'; speechSynthesis.speak(u); } catch (e) {}
+}
+
+function mostraConsiglio(st, mossa) {
+  if (st.vinto()) { el.mossa.textContent = 'Partita vinta'; el.frase.textContent = 'Tutte le carte sono sulle basi.'; disegnaPiantina(st, null); return; }
+  const [titolo, frase] = consiglio(mossa, st);
+  el.mossa.textContent = '';
+  for (const pezzo of titolo.split(/([0-9AJQK]+[♥♦])/)) {
+    const s = document.createElement('span');
+    if (/[♥♦]$/.test(pezzo)) s.className = 'r';
+    s.textContent = pezzo; el.mossa.append(s);
+  }
+  el.frase.textContent = frase;
+  disegnaPiantina(st, mossa);
+  if (frase !== ultimoConsiglio) { parla(frase); ultimoConsiglio = frase; }
+}
+
+// disegna sopra il video il tavolo agganciato: il bordo e i posti delle carte
+function disegnaAggancio() {
+  if (tocchi) return;
+  const cv = el.sovra, box = el.vista.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  cv.width = box.width * dpr; cv.height = box.height * dpr;
+  const g = cv.getContext('2d');
+  g.clearRect(0, 0, cv.width, cv.height);
+  if (!occhio || !occhio.cal) return;
+  const [fw, fh] = occhio.cal.dimensione;
+  const s = Math.min(cv.width / fw, cv.height / fh), ox = (cv.width - fw * s) / 2, oy = (cv.height - fh * s) / 2;
+  const P = (x, y) => { const [a, b] = occhio.cal.css2img(x, y); return [ox + a * s, oy + b * s]; };
+  const rett = (x, y, w, h) => { g.beginPath(); g.moveTo(...P(x, y)); g.lineTo(...P(x + w, y)); g.lineTo(...P(x + w, y + h)); g.lineTo(...P(x, y + h)); g.closePath(); g.stroke(); };
+  g.lineWidth = 2 * dpr; g.strokeStyle = 'rgba(92,192,127,.9)';
+  for (const p of [STOCK, WASTE, ...Object.values(FOUND_X).map(x => [x, FY]), ...COLX.map(x => [x, TOPY])]) rett(p[0], p[1], CW, CH);
+  // sopra ogni posto, la carta che l'app ha letto: così si vede subito se sbaglia
+  const st = ultimoLetto;
+  if (!st) return;
+  const etichetta = (testo, x, y, rosso) => {
+    const [a, b] = P(x, y);
+    g.font = `700 ${Math.round(15 * dpr)}px -apple-system, sans-serif`;
+    const w = g.measureText(testo).width + 8 * dpr, h = 20 * dpr;
+    g.fillStyle = 'rgba(0,0,0,.72)'; g.fillRect(a, b - h, w, h);
+    g.fillStyle = rosso ? '#ff7b82' : '#fff'; g.fillText(testo, a + 4 * dpr, b - 5 * dpr);
+  };
+  st.colonne.forEach((c, i) => {
+    const u = c.ultima();
+    const y = TOPY + (c.coperte + Math.max(0, c.carte.length - 1)) * PASSO;
+    etichetta(u ? nome(u) + (c.coperte ? ` (${c.coperte})` : '') : 'vuota', COLX[i], u ? y : TOPY, u && colore(u) === 'R');
+  });
+  if (st.scarto) etichetta(nome(st.scarto), WASTE[0], WASTE[1], colore(st.scarto) === 'R');
+  etichetta(st.mazzo ? 'mazzo' : 'vuoto', STOCK[0], STOCK[1], false);
+  for (const s of SEMI) if (st.basi[s]) etichetta(nome([st.basi[s], s]), FOUND_X[s], FY, 'hd'.includes(s));
+}
+
+/** Il tavolo b si ottiene da a con una sola mossa (o pescando)? Se no, voglio più conferme prima di crederci. */
+function vicino(a, b) {
+  if (!a) return false;
+  const diverse = a.colonne.filter((c, i) => K(c.firma()) !== K(b.colonne[i].firma())).length;
+  const basi = SEMI.split('').reduce((t, s) => t + Math.abs(a.basi[s] - b.basi[s]), 0);
+  return diverse <= 2 && basi <= 1;
+}
+
+function tick() {
+  if (document.hidden || !sorgente) { setTimeout(tick, 400); return; }
+  const pronto = sorgente.videoWidth || sorgente.naturalWidth;
+  if (!pronto) { setTimeout(tick, 200); return; }
+  const t0 = performance.now();
+  const frame = fotogramma(sorgente, el.lavoro);
+  if (!occhio.cal || errori >= 6) {
+    // l'aggancio dura un secondo o due: prima scrivo cosa sto facendo, poi lo faccio
+    if (!agganciando) { agganciando = true; stato('Aggancio il tavolo…'); setTimeout(tick, 30); return; }
+    agganciando = false;
+    const r = occhio.calibra(frame);
+    errori = 0; precedente = null; conferme = 0; ultimoLetto = null; tracciatore.svuota();
+    disegnaAggancio();
+    if (r.errore) { stato(r.errore, 'warn'); segnalaDaSolo('aggancio: ' + r.errore); }
+    else stato('Tavolo agganciato: leggo le carte…', 'ok');
+    setTimeout(tick, r.errore ? 500 : 30);
+    return;
+  }
+  const posti = occhio.leggiPosti(frame);
+  const ms = performance.now() - t0;
+  tempi.push(ms); if (tempi.length > 10) tempi.shift();
+  if (!posti) { errori++; setTimeout(tick, 40); return; }
+  // fotogramma mosso (carte che scorrono, iPad toccato): non vota
+  if (posti.movimento > SOGLIA_MOVIMENTO) {
+    stato('Movimento: aspetto che le carte si fermino', 'warn');
+    setTimeout(tick, 40); return;
+  }
+  tracciatore.aggiungi(posti);
+  const nonLetti = POSTI.filter(p => votoDi(p, posti[p]) === undefined);
+  errori = nonLetti.length >= 4 ? errori + 1 : 0;   // troppi posti illeggibili: forse l'aggancio è andato
+  // il tavolo vale quando ogni posto è stabile: 3 voti se è una mossa normale dal tavolo di prima,
+  // 5 se è cambiato troppo (più mosse veloci, partita nuova o una lettura storta)
+  let st = tracciatore.stato(3);
+  if (st && !vicino(statoAccettato, st)) st = tracciatore.stato(5);
+  if (st) {
+    ultimoLetto = st;
+    const prob = st.problema();
+    if (prob) stato('La lettura non torna (' + prob + '): aspetto', 'warn');
+    else {
+      const f = st.firma();
+      if (f !== accettata) {
+        accettata = f; statoAccettato = st;
+        mostraConsiglio(st, consigliere.nuovoStato(st));
+        disegnaAggancio();
+      }
+      stato('Tavolo agganciato', 'ok');
+      problemaDa = 0;
+    }
+  } else {
+    const incerti = tracciatore.incerti(3).map(nomePosto);
+    stato('Sto leggendo: ' + incerti.join(', '), incerti.length > 3 ? 'warn' : 'ok');
+    if (nonLetti.length) segnalaDaSolo('posti non letti: ' + nonLetti.join(','));
+  }
+  el.nota.textContent = `Lettura in ${Math.round(tempi.reduce((a, b) => a + b, 0) / tempi.length)} ms · fotocamera ${frame.width}×${frame.height}`;
+  setTimeout(tick, 40);
+}
+
+// il tocco su "Accendi" mentre le carte si stanno ancora caricando viene ricordato, non perso
+let accendiDopo = false;
+async function accendi() {
+  if (!occhio) { accendiDopo = true; el.via.disabled = true; el.caricamento.textContent = 'Un attimo: sto ancora preparando le carte, poi accendo la fotocamera…'; return; }
+  el.via.disabled = true;
+  const parametri = new URLSearchParams(location.search);
+  if (parametri.has('prova')) return provaDaImmagini(parametri.get('prova'));
+  try {
+    const flusso = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment', width: {ideal: 1920}, height: {ideal: 1440}}, audio: false});
+    el.video.srcObject = flusso;
+    await Promise.race([el.video.play().catch(() => {}), new Promise(r => setTimeout(r, 3000))]);
+    sorgente = el.video;
+    traccia = flusso.getVideoTracks()[0];
+    preparaZoom();
+  } catch (e) {
+    el.caricamento.textContent = location.protocol !== 'https:'
+      ? 'Serve la pagina in https (apri l’indirizzo che dà il Mac).'
+      : 'Fotocamera negata: in Impostazioni > Safari > Fotocamera scegli “Chiedi” o “Consenti”, poi ricarica.';
+    el.via.disabled = false;
+    return;
+  }
+  el.avvio.hidden = true;
+  try { await navigator.wakeLock.request('screen'); } catch (e) {}
+  tick();
+}
+
+// zoom della fotocamera, dove Safari lo permette: avvicina il tavolo senza spostare l'iPad
+let traccia = null;
+function preparaZoom() {
+  const cap = traccia && traccia.getCapabilities ? traccia.getCapabilities() : {};
+  if (!cap.zoom) return;
+  const z = $('zoom');
+  z.min = cap.zoom.min; z.max = Math.min(cap.zoom.max, 4); z.step = cap.zoom.step || 0.05;
+  try { const salvato = parseFloat(localStorage.getItem('zoom')); if (salvato) { z.value = salvato; traccia.applyConstraints({advanced: [{zoom: salvato}]}); } } catch (e) {}
+  $('zoomBox').hidden = false;
+  z.oninput = () => {
+    traccia.applyConstraints({advanced: [{zoom: parseFloat(z.value)}]}).catch(() => {});
+    try { localStorage.setItem('zoom', z.value); } catch (e) {}
+    if (occhio) occhio.cal = null;
+  };
+}
+
+// angoli del tavolo indicati col dito: 4 tocchi sul video (alto sx, alto dx, basso dx, basso sx)
+let tocchi = null;
+const NOMI_ANGOLI = ['in alto a sinistra', 'in alto a destra', 'in basso a destra', 'in basso a sinistra'];
+function daSchermoAFotogramma(ev) {
+  const box = el.sovra.getBoundingClientRect();
+  const fw = sorgente.videoWidth || sorgente.naturalWidth, fh = sorgente.videoHeight || sorgente.naturalHeight;
+  const s = Math.min(box.width / fw, box.height / fh), ox = (box.width - fw * s) / 2, oy = (box.height - fh * s) / 2;
+  return [(ev.clientX - box.left - ox) / s, (ev.clientY - box.top - oy) / s];
+}
+$('angoli').onclick = () => {
+  if (!sorgente) return;
+  tocchi = [];
+  el.vista.classList.add('tocca');
+  stato('Tocca l’angolo del tavolo ' + NOMI_ANGOLI[0], 'warn');
+};
+el.sovra.addEventListener('pointerdown', ev => {
+  if (!tocchi) return;
+  tocchi.push(daSchermoAFotogramma(ev));
+  const g = el.sovra.getContext('2d'), box = el.sovra.getBoundingClientRect(), dpr = el.sovra.width / box.width;
+  g.fillStyle = '#f2bd3a'; g.beginPath(); g.arc((ev.clientX - box.left) * dpr, (ev.clientY - box.top) * dpr, 9 * dpr, 0, 7); g.fill();
+  if (tocchi.length < 4) { stato('Tocca l’angolo del tavolo ' + NOMI_ANGOLI[tocchi.length], 'warn'); return; }
+  occhio.angoliManuali = tocchi; tocchi = null;
+  try { localStorage.setItem('angoli', JSON.stringify(occhio.angoliManuali)); } catch (e) {}
+  el.vista.classList.remove('tocca');
+  $('automatici').hidden = false;
+  occhio.cal = null;
+  stato('Angoli salvati: aggancio…');
+});
+$('automatici').onclick = () => {
+  occhio.angoliManuali = null; occhio.cal = null; $('automatici').hidden = true;
+  try { localStorage.removeItem('angoli'); } catch (e) {}
+};
+
+// quando non riesce a leggere per un po', manda da solo una foto al Mac (al massimo una ogni 20 s, 12 in tutto)
+let ultimoInvio = 0, invii = 0, problemaDa = 0;
+function segnalaDaSolo(motivo) {
+  const ora = performance.now();
+  if (!problemaDa) problemaDa = ora;
+  if (!dalMac || ora - problemaDa < 4000 || ora - ultimoInvio < 20000 || invii >= 12 || new URLSearchParams(location.search).has('prova')) return;
+  ultimoInvio = ora; invii++;
+  inviaAlMac({automatica: true, motivo}).catch(() => {});
+}
+async function inviaAlMac(extra) {
+  const st = ultimoLetto;
+  const lettura = st ? {mazzo: st.mazzo, scarto: st.scarto, basi: st.basi, colonne: st.colonne.map(c => ({coperte: c.coperte, carte: c.carte}))} : null;
+  const t = traccia && traccia.getSettings ? traccia.getSettings() : {};
+  return fetch('segnala', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({...extra, lettura, consiglio: el.mossa.textContent, angoli: occhio.cal && occhio.cal.angoli,
+      angoliManuali: occhio.angoliManuali || null, sfocatura: occhio.m.sig, fotocamera: {w: t.width, h: t.height, zoom: t.zoom},
+      immagine: el.lavoro.toDataURL('image/jpeg', 0.9)})});
+}
+
+// prova sul Mac: fa girare le foto di una cartella al posto della fotocamera
+async function provaDaImmagini(cartella) {
+  const nomi = Object.keys(await (await fetch(cartella + '/verita.json')).json());
+  el.video.hidden = true; el.provaImg.hidden = false; sorgente = el.provaImg;
+  let i = 0;
+  const cambia = () => { el.provaImg.src = cartella + '/' + nomi[i++ % nomi.length]; occhio.cal = null; };
+  cambia(); setInterval(cambia, 2500);
+  el.avvio.hidden = true;
+  tick();
+}
+
+$('riaggancia').onclick = () => { if (occhio) { occhio.cal = null; stato('Riaggancio il tavolo…'); } };
+$('nuova').onclick = () => {
+  consigliere = new Consigliere(); accettata = null; precedente = null; ultimoConsiglio = ''; statoAccettato = null; conferme = 0; tracciatore.svuota();
+  el.mossa.textContent = 'Nuova partita'; el.frase.textContent = 'Il consiglio arriva appena le carte sono distribuite.';
+};
+el.via.onclick = accendi;
+window.addEventListener('error', e => { if (!el.avvio.hidden) el.caricamento.textContent = 'Errore: ' + e.message; });
+window.addEventListener('unhandledrejection', e => { if (!el.avvio.hidden) el.caricamento.textContent = 'Errore: ' + (e.reason && e.reason.message || e.reason); });
+const dalMac = location.port === '8443';
+if (!dalMac) $('segnala').hidden = true;
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+$('segnala').onclick = async () => {
+  const b = $('segnala');
+  b.disabled = true; b.textContent = 'Invio…';
+  try { const r = await inviaAlMac({automatica: false}); b.textContent = r.ok ? 'Inviata al Mac, grazie' : 'Invio non riuscito'; }
+  catch (e) { b.textContent = 'Invio non riuscito'; }
+  setTimeout(() => { b.disabled = false; b.textContent = 'Segnala lettura sbagliata'; }, 2500);
+};
+window.addEventListener('resize', disegnaAggancio);
+
+(async () => {
+  try {
+    livelli = await caricaModelli('carte/');
+    occhio = new Occhio(livelli);
+    try { const a = JSON.parse(localStorage.getItem('angoli') || 'null'); if (a && a.length === 4) { occhio.angoliManuali = a; $('automatici').hidden = false; } } catch (e) {}
+    el.caricamento.textContent = 'Pronto.';
+    el.via.disabled = false;
+    if (accendiDopo) accendi();
+  } catch (e) {
+    el.caricamento.textContent = 'Non riesco a caricare le immagini delle carte: ' + e.message;
+  }
+})();
+</script>
+</body>
+</html>
