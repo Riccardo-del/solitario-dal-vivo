@@ -168,7 +168,7 @@ function carteSpostate(mossa, st) {
 function consiglio(mossa, st) {
   if (!mossa) return ['Nessuna mossa utile', 'Non ci sono più mosse che servano: la partita è persa. Inizia una nuova partita.'];
   if (mossa[0] === 'M') return st.mazzo
-    ? ['Pesca dal mazzo', 'Clicca il mazzo in alto a sinistra per girare una carta.']
+    ? ['Pesca dal mazzo', 'Clicca il mazzo in alto a sinistra per girare le carte.']
     : ['Rigira il mazzo', 'Clicca il posto vuoto del mazzo per rimettere sotto gli scarti.'];
   const carte = carteSpostate(mossa, st);
   const c = carte[0];

@@ -692,6 +692,17 @@ class Occhio {
     return n > 0.45 * tot;
   }
 
+  /** Ultima colonna (in punti) fra xa e xb, partendo da destra, coperta per lo più da bianco di carta. */
+  _bordoDestro(B, xa, xb, y) {
+    for (let x = xb; x > xa; x--) {
+      let n = 0, tot = 0;
+      const xx = Math.round(x * S);
+      for (let yy = Math.round((y + 25) * S); yy < (y + CH - 25) * S; yy += 3) { tot++; if (this._bianco(B, xx, yy)) n++; }
+      if (n > 0.6 * tot) return x;
+    }
+    return xa + 8;
+  }
+
   /** Deviazione standard del grigio in un rettangolo. */
   _contrasto(B, x0, y0, w, h) {
     let s = 0, s2 = 0, n = 0;
@@ -890,11 +901,15 @@ class Occhio {
 
   // Mazzo, scarti e basi: il sito sposta la carta in cima di 1 punto a destra e 1 in alto ogni 4 carte
   // della pila (fino a 6 punti con un mazzo pieno), quindi qui cerco in una zona più larga.
+  // Con "3 carte alla volta" il sito apre gli scarti a ventaglio: la carta giocabile è l'ultima a destra,
+  // spostata di 20 o 40 punti. La trovo dal bordo destro del bianco e leggo solo quella.
   leggiScarto(B) {
     const x0 = (WASTE[0] - 5) * S, y0 = (WASTE[1] - 9) * S;
-    return this._inCache('scarto', B, x0, y0, (WASTE[0] + CW + 9) * S, (WASTE[1] + CH + 6) * S, () => {
+    return this._inCache('scarto', B, x0, y0, (WASTE[0] + CW + 55) * S, (WASTE[1] + CH + 6) * S, () => {
       if (!this._cartaNelPosto(B, ...WASTE)) return null;
-      const c = this._carta(B, x0, y0, (WASTE[0] + 10) * S + this.m.id[0].T.w, (WASTE[1] + 6) * S + this.m.id[0].T.h + 2 * S, null, true);
+      const sx = this._bordoDestro(B, WASTE[0] + CW - 8, WASTE[0] + CW + 52, WASTE[1]) - CW;
+      const xa = Math.max(WASTE[0] - 5, sx - 5);
+      const c = this._carta(B, xa * S, y0, (xa + 15) * S + this.m.id[0].T.w, (WASTE[1] + 6) * S + this.m.id[0].T.h + 2 * S, null, true);
       return c.s >= SOGLIA_CARTA && c.margine >= MARGINE_MIN ? c.carta : NON_CHIARA;
     });
   }
