@@ -301,6 +301,8 @@ function daSchermoAFotogramma(ev) {
 }
 $('angoli').onclick = () => {
   if (!sorgente) return;
+  if (tocchi) { tocchi = null; el.vista.classList.remove('tocca'); $('angoli').textContent = 'Indica gli angoli del tavolo'; stato('Angoli annullati: cerco il tavolo da solo'); return; }
+  $('angoli').textContent = 'Annulla gli angoli';
   tocchi = [];
   el.vista.classList.add('tocca');
   stato('Tocca l’angolo del tavolo ' + NOMI_ANGOLI[0], 'warn');
@@ -312,7 +314,7 @@ el.sovra.addEventListener('pointerdown', ev => {
   g.fillStyle = '#f2bd3a'; g.beginPath(); g.arc((ev.clientX - box.left) * dpr, (ev.clientY - box.top) * dpr, 9 * dpr, 0, 7); g.fill();
   if (tocchi.length < 4) { stato('Tocca l’angolo del tavolo ' + NOMI_ANGOLI[tocchi.length], 'warn'); return; }
   occhio.angoliManuali = tocchi; tocchi = null;
-  try { localStorage.setItem('angoli', JSON.stringify(occhio.angoliManuali)); } catch (e) {}
+  $('angoli').textContent = 'Indica gli angoli del tavolo';
   el.vista.classList.remove('tocca');
   $('automatici').hidden = false;
   occhio.cal = null;
@@ -320,7 +322,6 @@ el.sovra.addEventListener('pointerdown', ev => {
 });
 $('automatici').onclick = () => {
   occhio.angoliManuali = null; occhio.cal = null; $('automatici').hidden = true;
-  try { localStorage.removeItem('angoli'); } catch (e) {}
 };
 
 // quando non riesce a leggere per un po', manda da solo una foto al Mac (al massimo una ogni 20 s, 12 in tutto)
@@ -377,7 +378,9 @@ window.addEventListener('resize', disegnaAggancio);
   try {
     livelli = await caricaModelli('carte/');
     occhio = new Occhio(livelli);
-    try { const a = JSON.parse(localStorage.getItem('angoli') || 'null'); if (a && a.length === 4) { occhio.angoliManuali = a; $('automatici').hidden = false; } } catch (e) {}
+    // gli angoli toccati a mano valgono solo per questa volta: l'inquadratura cambia ogni volta
+    try { localStorage.removeItem('angoli'); } catch (e) {}
+    occhio.senzaManuali = () => { $('automatici').hidden = true; };
     el.caricamento.textContent = 'Pronto.';
     el.via.disabled = false;
     if (accendiDopo) accendi();

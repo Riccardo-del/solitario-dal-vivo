@@ -48,6 +48,9 @@ class Stato {
     if (new Set(tutte).size !== tutte.length) return 'una carta compare due volte';
     const totale = this.colonne.reduce((a, c) => a + c.coperte + c.carte.length, 0) + [...SEMI].reduce((a, s) => a + this.basi[s], 0);
     if (totale > 52) return `conto ${totale} carte, più di 52`;
+    // nel mazzo e negli scarti ci sono al massimo le 24 carte rimaste dopo aver distribuito le colonne
+    if (totale < 28) return `conto solo ${totale} carte fra colonne e basi`;
+    if (!this.mazzo && !this.scarto && totale !== 52) return `senza mazzo e scarti dovrei vedere 52 carte, ne conto ${totale}`;
     return null;
   }
 }

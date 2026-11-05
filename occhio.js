@@ -488,10 +488,23 @@ function deforma(frame, w, h, f, mappa) {
 class Occhio {
   constructor(tutti) { this.tutti = tutti; this.livelli = tutti[1.5]; this.m = this.livelli[1]; this.cal = null; this.cache = {}; }
 
-  /** Prova ad agganciare il tavolo in questo fotogramma. */
+  /** Prova ad agganciare il tavolo in questo fotogramma. Se gli angoli toccati a mano non portano a
+   *  nessun tavolo (iPad spostato, tocchi sbagliati) li lascio perdere e cerco il tavolo da solo. */
   calibra(frame) {
-    const c = aggancia(frame, this.angoliManuali || null);
+    const r = this._calibra(frame, this.angoliManuali || null);
+    if (!r.errore || !this.angoliManuali) return r;
+    const auto = this._calibra(frame, null);
+    if (auto.errore) return r;
+    this.angoliManuali = null;
+    if (this.senzaManuali) this.senzaManuali();
+    return auto;
+  }
+
+  _calibra(frame, manuali) {
+    const c = aggancia(frame, manuali);
     if (c.errore) { this.cal = null; return c; }
+    // sotto i 0,7 pixel per punto le scritte delle carte sono troppo piccole per leggerle bene
+    if (c.densita < 0.7) { this.cal = null; return {errore: 'Il tavolo è troppo piccolo: avvicina l’iPad allo schermo o alza lo zoom.', angoli: c.angoli}; }
     this.letture = 0;
     // scala di lavoro: 2 se la fotocamera dà abbastanza pixel per punto, se no 1,5
     S = c.densita >= 1.8 ? 2 : 1.5;
