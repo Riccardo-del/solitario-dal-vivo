@@ -59,7 +59,11 @@ input[type=checkbox] { width: 20px; height: 20px; }
 <div class="avvio" id="avvio">
   <div>
     <h1>Solitario dal vivo</h1>
-    <p>Appoggia l'iPad davanti allo schermo dove giochi a cardgames.io, con tutto il tavolo inquadrato. L'app riconosce le carte da sola e ti dice la mossa dopo ogni tua mossa.</p>
+    <p id="spiega">Metti l'iPad sopra il tavolo, inquadrando dall'alto mazzo, scarti, basi e le 7 colonne. L'app riconosce le carte da sola e ti dice la mossa dopo ogni tua mossa.</p>
+    <div class="opzioni" role="radiogroup" aria-label="Dove giochi">
+      <label><input type="radio" name="modo" value="vere" checked> Carte vere sul tavolo</label>
+      <label><input type="radio" name="modo" value="schermo"> Schermo (cardgames.io)</label>
+    </div>
     <p id="caricamento">Carico le immagini delle carte…</p>
     <button class="primario" id="via">Accendi la fotocamera</button>
   </div>
@@ -100,6 +104,7 @@ input[type=checkbox] { width: 20px; height: 20px; }
 <canvas id="lavoro" hidden></canvas>
 <script src="logica.js"></script>
 <script src="occhio.js"></script>
+<script src="vere.js"></script>
 <script src="tracciamento.js"></script>
 <script>const el = {piantina: document.getElementById('piantina')};</script>
 <script src="piantina.js"></script>
@@ -157,6 +162,13 @@ function disegnaAggancio() {
   const g = cv.getContext('2d');
   g.clearRect(0, 0, cv.width, cv.height);
   if (!occhio || !occhio.cal) return;
+  if (occhio.vero) {
+    // carte vere: i posti li ha trovati l'occhio sull'immagine ridotta, che è il fotogramma diviso k
+    const [fw, fh] = occhio.cal.dimensione, k = occhio.cal.k;
+    const s = Math.min(cv.width / fw, cv.height / fh), ox = (cv.width - fw * s) / 2, oy = (cv.height - fh * s) / 2;
+    occhio.disegna(g, (x, y) => [ox + x * k * s, oy + y * k * s], dpr, ultimoLetto);
+    return;
+  }
   const [fw, fh] = occhio.cal.dimensione;
   const s = Math.min(cv.width / fw, cv.height / fh), ox = (cv.width - fw * s) / 2, oy = (cv.height - fh * s) / 2;
   const P = (x, y) => { const [a, b] = occhio.cal.css2img(x, y); return [ox + a * s, oy + b * s]; };
@@ -339,7 +351,7 @@ async function inviaAlMac(extra) {
   const t = traccia && traccia.getSettings ? traccia.getSettings() : {};
   return fetch('segnala', {method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({...extra, lettura, consiglio: el.mossa.textContent, angoli: occhio.cal && occhio.cal.angoli,
-      angoliManuali: occhio.angoliManuali || null, sfocatura: occhio.m.sig, fotocamera: {w: t.width, h: t.height, zoom: t.zoom},
+      angoliManuali: occhio.angoliManuali || null, sfocatura: occhio.m.sig, motivi: occhio.motivi || null, fotocamera: {w: t.width, h: t.height, zoom: t.zoom},
       immagine: el.lavoro.toDataURL('image/jpeg', 0.9)})});
 }
 
@@ -376,13 +388,35 @@ window.addEventListener('resize', disegnaAggancio);
 
 (async () => {
   try {
-    livelli = await caricaModelli('carte/');
-    occhio = new Occhio(livelli);
+    // carte vere (mazzo francese su un tavolo) o schermo di cardgames.io: la scelta resta per la volta dopo
+    let modo = 'vere';
+    try { modo = localStorage.getItem('modo') || 'vere'; } catch (e) {}
+    const scelta = document.querySelector(`input[name=modo][value=${modo}]`);
+    if (scelta) scelta.checked = true;
+    const prepara = async m => {
+      el.via.disabled = true; occhio = null;
+      if (m === 'vere') {
+        el.caricamento.textContent = 'Preparo i modelli delle carte (lettere, numeri e semi di 9 mazzi)…';
+        occhio = new OcchioVero(await modelliDaAngoli('angoli/'));
+        $('angoli').hidden = true;
+        $('spiega').textContent = "Metti l'iPad sopra il tavolo, inquadrando dall'alto mazzo, scarti, basi e le 7 colonne. L'app riconosce le carte da sola e ti dice la mossa dopo ogni tua mossa.";
+      } else {
+        livelli = livelli || await caricaModelli('carte/');
+        occhio = new Occhio(livelli);
+        $('angoli').hidden = false;
+        $('spiega').textContent = "Appoggia l'iPad davanti allo schermo dove giochi a cardgames.io, con tutto il tavolo inquadrato. L'app riconosce le carte da sola e ti dice la mossa dopo ogni tua mossa.";
+      }
+      occhio.senzaManuali = () => { $('automatici').hidden = true; };
+      el.caricamento.textContent = 'Pronto.';
+      el.via.disabled = false;
+    };
+    document.querySelectorAll('input[name=modo]').forEach(r => r.onchange = () => {
+      try { localStorage.setItem('modo', r.value); } catch (e) {}
+      prepara(r.value);
+    });
+    await prepara(modo);
     // gli angoli toccati a mano valgono solo per questa volta: l'inquadratura cambia ogni volta
     try { localStorage.removeItem('angoli'); } catch (e) {}
-    occhio.senzaManuali = () => { $('automatici').hidden = true; };
-    el.caricamento.textContent = 'Pronto.';
-    el.via.disabled = false;
     if (accendiDopo) accendi();
   } catch (e) {
     el.caricamento.textContent = 'Non riesco a caricare le immagini delle carte: ' + e.message;
